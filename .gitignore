@@ -6,6 +6,8 @@
 !docs/
 !docs/**/*
 !.nojekyll
+!*.qmd
+!*.md
 
 /.quarto/
 .Rproj.user
