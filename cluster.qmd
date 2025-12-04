@@ -1,0 +1,412 @@
+---
+title: "cluster"
+date: today
+date-format: "MMM D, YYYY"
+format: 
+  html:
+    toc: true
+    toc-depth: 4 
+    toc-location: left
+---
+
+## Introduction: Cluster Analysis
+
+Cluster analysis is a method for uncovering structure in unlabelled data by grouping similar observations together. It is a fundamental technique in data science and is widely applied across research, industry, and business analytics.
+
+There are several commonly used clustering methods. In this essay, I introduce the following:
+
+1.  **K-means clustering**
+
+-   Partitions data into k clusters
+
+-   Minimizes within-cluster variance
+
+-   Fast and widely used
+
+-   *Require k in advance*
+
+2.  **PAM (Partitioning Around Medoids)**
+
+-   similar to k-means but more robust, especially with noise and outliers
+
+-   PAM groups data into k clusters by selecting actual data points, called medoids, as the centers of clusters.
+
+-   *Require k in advance*
+
+3.  **Hierarchical clustering**
+
+-   Builds a tree (dendrogram) based on distance Two types:
+
+-   Agglomerative (bottom-up)
+
+-   Divisive (top-down)
+
+-   *Does not require specifying the number of clusters at first.*
+
+4.  **Density-based clustering (DBSCAN)**
+
+-   Groups points based on density
+
+-   Detects arbitrary-shaped clusters
+
+-   Good for finding outliers
+
+-   *Does not require precising number of clusters.*
+
+5.  **Self-Organizing Map (SOM)**
+
+-   A neural-network–based clustering and visualization technique
+
+- Serves as both a clustering algorithm and a nonlinear dimensionality reduction tool
+
+- Maps high-dimensional data onto a 2D grid while preserving similarity
+
+- Common applications include customer segmentation, image recognition, gene expression analysis, ecological data, market research, and remote sensing/GIS.
+
+
+For methods such as k-means, where the number of clusters k must be chosen beforehand, several techniques have been developed to determine an appropriate value:
+
+-   Elbow method
+
+-   Silhouette method
+
+-   PAMK
+
+-   NbClust
+
+
+In this essay, after introducing k-means and these approaches for selecting k, I present examples of PAM, hierarchical clustering, and DBSCAN, followed by a demonstration of SOM.
+
+## Data
+
+Data is obtained through [Wine Quality Data Set (Red & White Wine)](https://www.kaggle.com/datasets/ruthgn/wine-quality-data-set-red-white-wine). The data is originally prepared and kindly allowed to shared by P. Cortez, A. Cerdeira, F. Almeida, T. Matos and J. Reis. Modeling wine preferences by data mining from physicochemical properties. In Decision Support Systems, **Elsevier**, 47(4):547-553, 2009. The detail such as the number of records, features and data type is as follow:
+
+```{r}
+library(pacman)
+p_load(tidyverse, skimr)
+df <- read.csv("wine-quality-white-and-red.csv")
+
+df %>% skim
+```
+
+```{r}
+df %>% glimpse
+```
+
+
+```{r}
+p_load(dbscan, cluster, fpc, NbClust, kohonen)
+```
+
+## Cluster analysis
+
+Cluster analyses that rely on distance measures usually require the data to be standardized beforehand. Methods such as k-means, PAM, hierarchical clustering, NbClust, and SOM all depend on distance calculations, making standardization an essential preprocessing step.
+
+In addition, distance-based analyses require categorical variables to be converted into numeric form, such as through label encoding
+
+
+```{r}
+df_scale <- df %>% mutate(across(where(is.numeric), scale)) # standardization
+mt_st <- model.matrix( ~. -1, data = df_scale) # label encoding
+```
+
+### K-means
+
+#### Choose the best k
+
+##### Elbow method
+
+```{r}
+#| message: false
+#| warning: false
+
+wss <- sapply(1:20, function(k){
+  kmeans(mt_st, centers = k, nstart = 25)$tot.withinss
+})
+
+plot(1:20, wss, type = "b",
+     xlab = "Number of clusters (k)",
+     ylab = "Total within-cluster sum of squares",
+     main = "Elbow Method")
+```
+
+##### Silhouette method
+
+The best k is the one with the highest silhouette width.
+
+```{r}
+sil_width <- sapply(2:10, 
+                    \(x){pam(mt_st, k = x)$silinfo$avg.width
+                      })
+plot(2:10, sil_width, type = "b",
+     xlab = "Number of clusters (k)",
+     ylab = "Average silhouette width",
+     main = "Silhouette Method")
+```
+
+##### PAMK and PAM 
+
+```{r}
+pamk_res <- pamk(mt_st, krange = 2:10)
+pamk_res$nc
+```
+
+```{r}
+layout(matrix(c(2,1), 1, 2))
+plot(pamk_res$pamobject)
+layout(matrix(1))
+```
+
+
+
+```{r}
+pam_res <- pam(mt_st, k = 2)
+# Cluster plot
+clusplot(pam_res, main = "PAM Clustering", color = TRUE, shade = TRUE, labels = 2, lines = 0)
+```
+
+This figure is identical to the plot on the right in the previous set of plots.
+
+##### NbClust
+
+```{r}
+set.seed(123)
+mt2 <- mt_st[, -1] # remove multicollinearity
+nb_d <- NbClust(
+    data = mt2,
+    min.nc = 2,
+    max.nc = 10,
+    method = "kmeans"
+)
+```
+
+```{r}
+nb_d$Best.nc 
+```
+
+The optimal number of clusters appears to be 3. In addition, the Silhouette index calculated by NbClust is 3.
+
+#### Clustering
+
+Conduct k-means clustering with the number of clusters set to 2.
+
+```{r}
+km_res <- kmeans(mt_st, centers = 2, nstart = 25)
+```
+
+Visualization using PCA.
+
+```{r}
+pca <- prcomp(mt_st, scale. = TRUE)
+pca_df <- data.frame(PC1 = pca$x[ , 1], PC2 = pca$x[ , 2], Cluster = factor(km_res$cluster))
+plot(pca_df[c("PC1", "PC2")], col = pca_df$Cluster)
+```
+
+
+### Hierarchical clustering
+
+```{r}
+d <- dist(mt_st, method = "euclidean")
+hc <- hclust(d, method = "complete")
+hc
+```
+
+```{r}
+plot(hc)
+```
+
+Grouping by distance
+```{r}
+plot(hc)
+rect.hclust(hc, k = 2, border = 1:10)
+```
+
+```{r}
+p_load(factoextra)
+
+fviz_cluster(list(data = mt_st, cluster = cutree(hc, k = 2)), labelsize = 7)
+
+```
+Single method
+
+```{r}
+hc2 <- hclust(d, method = "ward.D2")
+hc2
+
+```
+
+```{r}
+plot(hc2)
+rect.hclust(hc2, k = 2, border = 1:4)
+```
+
+```{r}
+fviz_cluster(list(data = mt_st, cluster = cutree(hc2, k = 2)), labelsize = 7)
+```
+
+### DBSCAN
+
+```{r}
+kNNdistplot(mt_st, k = ncol(mt_st) + 1)
+abline(h = 1.8, col = "green")
+```
+
+```{r}
+x <- 1.8
+db1 <- dbscan::dbscan(mt_st, eps = x, minPts = ncol(mt_st) + 1)
+
+```
+
+```{r}
+hullplot(mt_st, db1)
+```
+
+```{r}
+plot(mt_st, col = db1$cluster)
+```
+#### Removing noise
+
+```{r}
+noise <- which(db1$cluster == 0)
+df2 <- mt_st[-noise,]
+nrow(df2)
+```
+
+```{r}
+kNNdistplot(df2, k = ncol(df2) + 1)
+abline(h = 1.75, col = "red")
+```
+
+```{r}
+x <- 1.75
+db2 <- dbscan::dbscan(df2, eps = x, minPts = ncol(df2) + 1)
+hullplot(df2, db2)
+```
+
+
+### SOM
+
+
+```{r}
+set.seed(123)
+sample_df <- mt_st[sample(1:nrow(mt_st), 1000), ] 
+wine_s <- sample_df 
+i_grid <- somgrid(xdim = 6, ydim = 6, topo = "hexagonal")
+
+set.seed(100)
+som_model <- som(X = wine_s, grid = i_grid, rlen = 500, alpha = c(0.6, 0.01))
+```
+
+#### Counts
+
+```{r}
+plot(som_model, type = "counts")
+```
+
+#### Changes plot
+
+```{r}
+plot(som_model, type="changes")
+```
+
+#### dist neighbours plot
+
+```{r}
+plot(som_model, type="dist.neighbours")
+```
+
+#### Codes
+
+```{r}
+#| fig-height: 8 
+plot(som_model, type="codes")
+```
+
+#### Mapping
+
+```{r}
+plot(som_model, type="mapping")
+```
+
+#### Property
+
+```{r}
+par(mfrow=c(1,2))
+
+coolBlueHotRed <- function(n, alpha = 1){
+  rainbow(n, end=4/6, alpha=alpha)[n:1]}
+for (i in 1:2){
+plot(som_model, type = "property",
+  property = getCodes(som_model)[, i], main = colnames(sample_df)[i],
+  palette.name = coolBlueHotRed)
+}
+```
+
+```{r}
+par(mfrow=c(1,2))
+
+for (i in 3:4){
+plot(som_model, type = "property",
+  property = getCodes(som_model)[, i], main = colnames(sample_df)[i],
+  palette.name = coolBlueHotRed)
+}
+```
+
+```{r}
+#| height: 8
+par(mfrow=c(1,2))
+for (i in 5:6){
+plot(som_model, type = "property",
+  property = getCodes(som_model)[, i], main = colnames(sample_df)[i],
+  palette.name = coolBlueHotRed)
+}
+```
+
+```{r}
+#| height: 8
+par(mfrow=c(1,2))
+for (i in 7:8){
+plot(som_model, type = "property",
+  property = getCodes(som_model)[, i], main = colnames(sample_df)[i],
+  palette.name = coolBlueHotRed)
+}
+```
+
+```{r}
+#| height: 8
+par(mfrow=c(1,2))
+for (i in 9:10){
+plot(som_model, type = "property",
+  property = getCodes(som_model)[, i], main = colnames(sample_df)[i]
+  , palette.name = coolBlueHotRed)
+}
+```
+
+```{r}
+#| height: 8
+par(mfrow=c(1,2))
+for (i in 11:12){
+plot(som_model, type = "property",
+  property = getCodes(som_model)[, i], main = colnames(sample_df)[i]
+  , palette.name = coolBlueHotRed)
+}
+```
+
+```{r}
+#| height: 8
+par(mfrow=c(1,2))
+for (i in 13:14){
+plot(som_model, type = "property",
+  property = getCodes(som_model)[, i], main = colnames(sample_df)[i]
+  , palette.name = coolBlueHotRed)
+}
+```
+
+
+
+### Discussion
+
+- The grid size appears appropriate because each node contains more than five samples, as shown in the counts plot.
+
+- The neighbour distance plot suggests the presence of clusters, although the boundaries are not very distinct. However, the codes plot provides a clearer picture. For example, the nodes in the upper-right region share similar profiles, indicating that they belong to the same cluster. The density patterns in the mapping plot also help identify clusters. The densely occupied area in the upper-right region is consistent with what is seen in the neighbour distance and codes plots.
+- The property heatmaps illustrate relationships between features. For instance, comparing the heatmaps of chlorides and free sulfur dioxide suggests a negative correlation between them. In contrast, chlorides and volatile acidity appear to be positively correlated.
