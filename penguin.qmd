@@ -269,10 +269,8 @@ Label encoding is also essential for SVM and kNN.
 
 ```{r}
 
-df1 <- df0[-1] # drop target column
-dummy <- dummyVars(~ ., data = df1)
-dummy_df <- predict(dummy, newdata = df1)
-df_svm_knn <- cbind(df[1], dummy_df)
+dummy <- model.matrix(species ~ . -1, data = df0)
+df_svm_knn <- data.frame(species = df0$species, dummy)
 
 ```
 
